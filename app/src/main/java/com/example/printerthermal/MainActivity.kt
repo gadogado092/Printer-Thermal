@@ -1,18 +1,20 @@
 package com.example.printerthermal
 
 import android.Manifest
+import android.R.attr.data
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothManager
-import android.bluetooth.BluetoothSocket
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import android.util.Log
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -29,12 +31,15 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.core.app.ActivityCompat
-import java.util.UUID
 import androidx.lifecycle.viewmodel.compose.viewModel
+import java.io.File
+import java.io.FileOutputStream
+import java.util.UUID
+
 
 class MainActivity : ComponentActivity() {
 
-    private val requestEnableBluetooth = 1
+    private val requestEnableBluetootha = 1
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -96,7 +101,7 @@ class MainActivity : ComponentActivity() {
             Text(text = "Scan Pairing Bluetooth")
         }
         Button(onClick = {
-            testPrint(myViewModel)
+            testPrint(context, myViewModel)
         }) {
             Text(text = "Test Print")
         }
@@ -124,7 +129,7 @@ class MainActivity : ComponentActivity() {
                 // to handle the case where the user grants the permission. See the documentation
                 // for ActivityCompat#requestPermissions for more details.
                 val enableBtIntent = Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE)
-                startActivityForResult(enableBtIntent, requestEnableBluetooth)
+                startActivityForResult(enableBtIntent, requestEnableBluetootha)
                 return
             }
         } else {
@@ -174,22 +179,125 @@ class MainActivity : ComponentActivity() {
         val bluetoothManager =
             context.getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager
         val bluetoothAdapter = bluetoothManager.getAdapter()
-
         val bluetoothDevice = bluetoothAdapter.getRemoteDevice("idPrinter")
 
 
     }
 
-    private fun testPrint(myViewModel: MainViewModel) {
+    private fun testPrint(context: Context, myViewModel: MainViewModel) {
         if (myViewModel.printerSelected.value.address == "") {
             Toast.makeText(this, "Pilih Printernya Gan", Toast.LENGTH_LONG).show()
         } else {
-            var bluetoothSocket: BluetoothSocket
-            val applicationUUID = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB")
+            val bluetoothManager =
+                context.getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager
+            val bluetoothAdapter = bluetoothManager.adapter
+
+            if (bluetoothAdapter == null) {
+                Toast.makeText(this, "Bluetooth Adapter Broken", Toast.LENGTH_LONG).show()
+            } else {
+                val applicationUUID = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB")
+                val bluetoothDevice =
+                    bluetoothAdapter.getRemoteDevice(myViewModel.printerSelected.value.address)
+
+                if (ActivityCompat.checkSelfPermission(
+                        this,
+                        Manifest.permission.BLUETOOTH_CONNECT
+                    ) != PackageManager.PERMISSION_GRANTED
+                ) {
+                    // TODO: Consider calling
+                    //    ActivityCompat#requestPermissions
+                    // here to request the missing permissions, and then overriding
+                    //   public void onRequestPermissionsResult(int requestCode, String[] permissions,
+                    //                                          int[] grantResults)
+                    // to handle the case where the user grants the permission. See the documentation
+                    // for ActivityCompat#requestPermissions for more details.
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                        ActivityCompat.requestPermissions(
+                            this,
+                            arrayOf(Manifest.permission.BLUETOOTH_CONNECT),
+                            1
+                        )
+                    }
+//                    Toast.makeText(this, "Printer Permission Problem 1", Toast.LENGTH_LONG)
+//                        .show()
+                }
+
+
+                val bluetoothSocket =
+                    bluetoothDevice.createRfcommSocketToServiceRecord(applicationUUID)
+                //check koneksi
+                try {
+                    bluetoothSocket.connect()
+                } catch (e: Exception) {
+                    Toast.makeText(
+                        this@MainActivity,
+                        "Printer Socket Tidak Tersambung",
+                        Toast.LENGTH_LONG
+                    )
+                        .show()
+                    bluetoothSocket.close()
+                    return
+                }
+
+                try {
+
+                    if (bluetoothSocket == null) {
+                        Toast.makeText(
+                            this@MainActivity,
+                            "Printer Socket Tidak Tersambung",
+                            Toast.LENGTH_LONG
+                        )
+                            .show()
+                        return
+                    } else {
+                        Toast.makeText(this, "Printer Mencetak", Toast.LENGTH_LONG)
+                            .show()
+
+                        val data = "Selamat Datang Boss"
+
+                        val outputStream = bluetoothSocket.outputStream
+
+                        val printformat = byteArrayOf(0x1B, 0x21, 0x03)
+                        outputStream.write(printformat)
+
+                        val cc = byteArrayOf(0x1B, 0x21, 0x03)
+                        outputStream.write(cc)
+
+                        val ESC_ALIGN_LEFT = byteArrayOf(0x1b, 'a'.code.toByte(), 0x00)
+                        outputStream.write(ESC_ALIGN_LEFT)
+
+                        val bytes = data.toByteArray()
+
+                        outputStream.write(bytes)
+
+                        val LF = byteArrayOf(0x0A)
+                        outputStream.write(LF)
+                        outputStream.write(LF)
+                        outputStream.write(LF)
+                        outputStream.write(LF)
+
+                        outputStream.flush()
+                        outputStream.close()
+                        bluetoothSocket.close()
+
+
+                    }
+
+                } catch (e: Exception) {
+                    Log.e("bluetooth", e.message.toString())
+                    Toast.makeText(this@MainActivity, "Error ${e.message}", Toast.LENGTH_LONG)
+                        .show()
+                }
+
+
+            }
+
         }
 
     }
+
 }
+
 
 @Composable
 fun Greeting(name: String, modifier: Modifier = Modifier) {
